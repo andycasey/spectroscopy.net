@@ -9,6 +9,11 @@ from itertools import permutations
 
 known_arc_lines = Table.read("lovis_et_al_2007.fits")
 
+keep = (5000 > known_arc_lines["Lambda"]) \
+     * (known_arc_lines["Lambda"] > 4000)
+
+known_arc_lines = known_arc_lines[keep]
+
 # OK, let's measure positions for three lines.
 thar = fits.open("thar/HARPS.2004-01-01T20:07:02.313_e2ds_A.fits")
 
@@ -86,15 +91,6 @@ def fit_arc_line(intensities, pixel_min, pixel_max, **kwargs):
     meta = dict(x=x, p0=kwds["p0"])
     return (p_opt, p_cov, meta)
 
-
-"""
-measured_arc_lines = [
-    fit_arc_line(intensities, 966, 1005),
-    fit_arc_line(intensities, 3210, 3230),
-    fit_arc_line(intensities, 3500, 3540)
-]
-"""
-
 order_index = 30
 wavelengths = air_to_vacuum(thar_wavelengths[order_index])
 intensities = thar_intensities[order_index]
@@ -102,10 +98,17 @@ intensities = thar_intensities[order_index]
 
 # For order_index = 30
 measured_arc_lines = [
-    fit_arc_line(intensities, 895, 915),
-    fit_arc_line(intensities, 2080, 2100),
-    fit_arc_line(intensities, 3100, 3130)
+    fit_arc_line(intensities, 1285, 1300),
+    fit_arc_line(intensities, 1798, 1810),
+    fit_arc_line(intensities, 3899, 3909)
 ]
+
+measured_arc_lines = [
+    fit_arc_line(intensities, 1535, 1545),
+    fit_arc_line(intensities, 1555, 1570),
+    fit_arc_line(intensities, 1660, 1671)
+]
+
 
 
 fig, axes = plt.subplots(2)
@@ -131,11 +134,8 @@ axes[1].set_xlim(wavelengths[0], wavelengths[-1])
 axes[1].set_xlabel("Wavelenth (vac)")
 axes[1].set_ylabel("Intensity")
 
-
 fig.tight_layout()
 
-
-raise a
 
 
 def measured_pixel_ratios(measured_pixel_peaks, indices=None):
@@ -180,7 +180,8 @@ def arc_line_permutations(known_arc_lines, N, wavelength_label="Lambda",
     best = []
     lowest = np.inf
 
-    for i, permutation_indices in enumerate(permutations(brightness_indices, N)):
+    #for i, permutation_indices in enumerate(permutations(brightness_indices, N)):
+    for i, permutation_indices in enumerate(np.array([[2203, 2204, 2211]])):
 
         # Measure the ratios.
         ratios, permutation_indices, offset, scale = measured_pixel_ratios(
@@ -190,14 +191,24 @@ def arc_line_permutations(known_arc_lines, N, wavelength_label="Lambda",
         if len(best) == 0 or sum_diff < lowest:
             best = [ratios, permutation_indices]
 
-        if np.allclose(pixel_ratios, ratios, atol=tolerance):
+        
+        #if np.allclose(pixel_ratios, ratios, atol=tolerance):
+
+        if np.all(np.array([2203, 2204, 2211]) == permutation_indices):
+
 
             # Make a proposal.
+            arc_wavelengths = known_arc_lines[wavelength_label]
+            model_ratios = (arc_wavelengths - arc_wavelengths[permutation_indices[0]]) \
+                         / (arc_wavelengths[permutation_indices[-1]] - arc_wavelengths[permutation_indices[0]])
+
+
+
 
             #  convert all wavelengths to pixels
-            all_ratios = (known_arc_lines[wavelength_label] - offset)/scale
+            #all_ratios = (known_arc_lines[wavelength_label] - offset)/scale
 
-            proposed_pixels = all_ratios * np.ptp(measured_pixel_peaks) + np.min(measured_pixel_peaks)
+            proposed_pixels = model_ratios * np.ptp(measured_pixel_peaks) + np.min(measured_pixel_peaks)
 
 
             # If this match is true, then we should predict the wavelengths of
@@ -220,16 +231,24 @@ def arc_line_permutations(known_arc_lines, N, wavelength_label="Lambda",
             fig, ax = plt.subplots()
             ax.plot(intensities, c='k')
 
-            ax.scatter(proposed_pixels, np.ones(proposed_pixels.size) * np.array(ax.get_ylim()).mean(), c="r")
+            pixels = np.arange(intensities.size)
+            ok = (intensities.size >= proposed_pixels) * (proposed_pixels >= 0)
+
+
+            ax.scatter(proposed_pixels[ok], intensities[pixels.searchsorted(proposed_pixels[ok])], c='r')
+
+
+
+            #ax.scatter(proposed_pixels, intensities[np.arange(intensities.size).searchsorted(proposed_pixels)], c="r")
             ax.set_xlim(0, len(intensities))
 
             #    ax.axvline(proposed_pixel, c="#666666", lw=1, linestyle=":")
-
+            print(known_arc_lines[wavelength_label][permutation_indices])
             raise a
 
 
-        print("{:.0f} {:.2f} {:.2f} {:.5e}".format(i, ratios[1], pixel_ratios[1],
-            np.sum(known_arc_lines[intensity_label][permutation_indices])))
+        print("{:.0f} {:.2f} {:.2f} {:.5e} {}".format(i, ratios[1], pixel_ratios[1],
+            np.sum(known_arc_lines[intensity_label][permutation_indices]), permutation_indices))
 
 
 arc_line_permutations(known_arc_lines, len(measured_pixel_peaks))
