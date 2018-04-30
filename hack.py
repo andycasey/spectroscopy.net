@@ -7,23 +7,46 @@ from astropy.table import Table
 from itertools import permutations
 
 
-known_arc_lines = Table.read("lovis_et_al_2007.fits")[:1000]
+known_arc_lines = Table.read("lovis_et_al_2007.fits")
 
 # OK, let's measure positions for three lines.
 thar = fits.open("thar/HARPS.2004-01-01T20:07:02.313_e2ds_A.fits")
 
 # Calculate the wavelength calibration given the coefficients in the header.
+O, P = thar[0].data.shape
+
+D = 1 + thar[0].header["ESO DRS CAL TH DEG X"]
+x = np.arange(P) # 1-based indexing for HARPS
+
+coefficients = np.array([
+    thar[0].header["ESO DRS CAL TH COEFF LL{:.0f}".format(i)] \
+    for i in range(D * O)])
+
+design_matrix = np.array([x**i for i in range(D)]).T
+thar_wavelengths = np.dot(design_matrix, coefficients.reshape((-1, D)).T).T
 thar_intensities = thar[0].data
-thar_wavelengths = np.zeros_like(thar_intensities)
-for o in range(thar_intensities.shape[0]):
 
-    d = thar[0].header["ESO DRS CAL TH DEG LL"]
-    A = thar[0].header["ESO DRS CAL TH COEFF LL"] 
 
-    raise a
+def air_to_vacuum(wavelength):
+    """
+    It converts spectrum's wavelengths (nm) from air to vacuum
+    """
+    # Following the air to vacuum conversion from VALD3 (computed by N. Piskunov) http://www.astro.uu.se/valdwiki/Air-to-vacuum%20conversion
+    s_square = np.power(1.e4 / wavelength, 2)
+    n2 = 1. + 0.00008336624212083 + 0.02408926869968 / (130.1065924522 - s_square) + 0.0001599740894897 / (38.92568793293 - s_square)
+    return wavelength*n2 # Angstroms
 
-thar_index = 0
-intensities = thar[0].data[thar_index]
+
+def vacuum_to_air(wavelength):
+    """
+    It converts spectrum's wavelengths from vacuum to air
+    """
+    # Following the vacuum to air conversion the formula from Donald Morton (2000, ApJ. Suppl., 130, 403) which is also a IAU standard
+    # - More info: http://www.astro.uu.se/valdwiki/Air-to-vacuum%20conversion
+    s_square = np.power(1.e4 / wavelength, 2)
+    n = 1 + 0.0000834254 + 0.02406147 / (130 - s_square) + 0.00015998 / (38.9 - s_square)
+    return wavelength/n # Angstroms
+
 
 def gaussian(x, *parameters):
     """
@@ -72,21 +95,47 @@ measured_arc_lines = [
 ]
 """
 
+order_index = 30
+wavelengths = air_to_vacuum(thar_wavelengths[order_index])
+intensities = thar_intensities[order_index]
+
+
+# For order_index = 30
 measured_arc_lines = [
-    fit_arc_line(intensities, 2097, 2106),
-    fit_arc_line(intensities, 2106, 2117),
-    fit_arc_line(intensities, 2720, 2750)
+    fit_arc_line(intensities, 895, 915),
+    fit_arc_line(intensities, 2080, 2100),
+    fit_arc_line(intensities, 3100, 3130)
 ]
 
 
-fig, ax = plt.subplots()
-ax.plot(intensities)
-ax.set_xlabel("Pixel")
-ax.set_ylabel("Intensity")
-fig.tight_layout()
+fig, axes = plt.subplots(2)
+axes[0].plot(intensities)
+axes[0].set_xlabel("Pixel")
+axes[0].set_ylabel("Intensity")
+axes[0].set_xlim(0, P)
 
 for p_opt, p_cov, meta in measured_arc_lines:
-    ax.plot(meta["x"], gaussian(meta["x"], *p_opt), c='r')
+    axes[0].plot(meta["x"], gaussian(meta["x"], *p_opt), c='r')
+
+
+axes[1].plot(wavelengths, intensities)
+
+ok = (wavelengths[-1] >= known_arc_lines["Lambda"]) \
+   * (known_arc_lines["Lambda"] >= wavelengths[0])
+
+for known_arc_line in known_arc_lines[ok]:
+    axes[1].axvline(known_arc_line["Lambda"], c="#666666", linestyle=":", zorder=-1)
+
+axes[1].set_xlim(wavelengths[0], wavelengths[-1])
+
+axes[1].set_xlabel("Wavelenth (vac)")
+axes[1].set_ylabel("Intensity")
+
+
+fig.tight_layout()
+
+
+raise a
 
 
 def measured_pixel_ratios(measured_pixel_peaks, indices=None):
